@@ -191,31 +191,34 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         limite_filas_adicionales = 40 + max(3, total_items_adicionales)
         rango_filas_totales_adicionales = list(range(40, limite_filas_adicionales))
 
-        # CORRECCIÓN DE RE-ESCRITURA SEGURA EN CELDAS COMBINADAS
+        # CORRECCIÓN DE RE-ESCRITURA SEGURA EN CELDAS COMBINADAS (INDENTACIÓN FIJADA)
         for fila_actual_ad in rango_filas_totales_adicionales:
-            # Desvincular temporalmente combinaciones previas en este renglón específico para habilitar escritura limpia
             for block in list(nueva_hoja_puesto.merged_cells.ranges):
                 if block.min_row == fila_actual_ad and block.max_row == fila_actual_ad:
                     if block.min_col >= 4 or block.max_col <= 11:
-                        nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
-            # Limpiar contenido de forma segura sin restricciones de solo lectura
+                        nueva_hoja_puesto.unmerge_cells(
+                            start_row=block.min_row, start_column=block.min_col,
+                            end_row=block.max_row, end_column=block.max_col
+                        )
+
             for col_clean in range(4, 12):
                 nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
-            # Aplicar inyección de los datos correspondientes
+
             idx_ad = fila_actual_ad - 40
-                if idx_ad < total_items_adicionales:
-                    cantidad_item, nombre_item = procesar_articulo_adicional(lista_items_adicionales[idx_ad])
-                    nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = nombre_item
-                    nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = cantidad_item
-                        else:
-                            nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = "OTROS: "
-                            nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = None
-            # Volver a combinar limpiamente las columnas D hasta la K según el diseño estético requerido
+            if idx_ad < total_items_adicionales:
+                cantidad_item, nombre_item = procesar_articulo_adicional(lista_items_adicionales[idx_ad])
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = nombre_item
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = cantidad_item
+            else:
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = "OTROS: "
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = None
+
             nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
 
     if puestos_procesados_en_proyecto > 0:
         wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
         print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
-        wb_salida_proyecto.close()
-        print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
+    wb_salida_proyecto.close()
+
+print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
