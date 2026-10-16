@@ -12,7 +12,9 @@ if not os.path.exists(archivo_fuente) or not os.path.exists(archivo_plantilla):
     raise FileNotFoundError("Error: Asegúrate de tener la fuente de verdad y la plantilla en la carpeta.")
 
 wb_fuente_maestra = openpyxl.load_workbook(archivo_fuente, data_only=True)
-hoja_maestra = wb_fuente_maestra.active
+
+# 1. DEFINICIÓN ACTUALIZADA DE HOJAS VÁLIDAS POR REGIÓN
+hojas_validas_regiones = ["COSTA", "SIERRA", "AMAZONIA"]
 
 
 def normalizar_texto(texto):
@@ -22,12 +24,23 @@ def normalizar_texto(texto):
     return re.sub(r'\s+', ' ', texto_norm)
 
 
-columnas_map = {normalizar_texto(hoja_maestra.cell(row=1, column=c).value): c for c in range(1, hoja_maestra.max_column + 1) if hoja_maestra.cell(row=1, column=c).value}
+def procesar_articulo_adicional(texto_adicional):
+    match = re.match(r"^(\d+)\s+(.*)$", str(texto_adicional).strip())
+    return (int(match.group(1)), match.group(2).strip().upper()) if match else (1, str(texto_adicional).strip().upper())
 
-# Búsqueda flexible e infalible para el Forro de Chaleco
-col_forro = columnas_map.get(normalizar_texto("FORRO DE CHALECO"))
-if not col_forro:
-    col_forro = columnas_map.get(normalizar_texto("FORRO CHALECO"))
+
+# Mapear encabezados usando la primera hoja válida que exista en el archivo
+hoja_guia = None
+for h_name in wb_fuente_maestra.sheetnames:
+    if h_name.strip().upper() in hojas_validas_regiones:
+        hoja_guia = wb_fuente_maestra[h_name]
+        break
+if hoja_guia is None:
+    hoja_guia = wb_fuente_maestra.active
+
+columnas_map = {normalizar_texto(hoja_guia.cell(row=1, column=c).value): c for c in range(1, hoja_guia.max_column + 1) if hoja_guia.cell(row=1, column=c).value}
+
+col_forro = columnas_map.get(normalizar_texto("FORRO DE CHALECO")) or columnas_map.get(normalizar_texto("FORRO CHALECO"))
 if not col_forro:
     for k, v in columnas_map.items():
         if "FORRO" in k:
@@ -35,49 +48,26 @@ if not col_forro:
             break
 
 map_directo_celdas = {
-    "C12": col_forro,
-    "C13": columnas_map.get(normalizar_texto("PLACAS ANTIBALAS")),
-    "D13": columnas_map.get(normalizar_texto("SERIE")),
-    "C14": columnas_map.get(normalizar_texto("CINTO")),
-    "C15": columnas_map.get(normalizar_texto("PORTA ARMA")),
-    "C16": columnas_map.get(normalizar_texto("PORTA RADIO")),
-    "C17": columnas_map.get(normalizar_texto("PORTA TOLETE")),
-    "C18": columnas_map.get(normalizar_texto("TOLETE")),
-    "C21": columnas_map.get(normalizar_texto("CELULAR COPORATIVO")),
-    "C22": columnas_map.get(normalizar_texto("LINTERNA")),
-    "C23": columnas_map.get(normalizar_texto("PONCHO IMPERMEABLE")),
-    "C24": columnas_map.get(normalizar_texto("BOTAS IMPERMEABLES")),
-    "C25": columnas_map.get(normalizar_texto("CHALECO REFLECTIVO")),
-    "C26": columnas_map.get(normalizar_texto("CASCO")),
-    "C27": columnas_map.get(normalizar_texto("DETECTOR METALES")),
-    "C29": columnas_map.get(normalizar_texto("MESA")),
-    "C30": columnas_map.get(normalizar_texto("SILLA")),
-    "C31": columnas_map.get(normalizar_texto("CARPA")),
-    "C32": columnas_map.get(normalizar_texto("GARITA")),
-    "C33": columnas_map.get(normalizar_texto("CONOS TRANSITO")),
-    "C34": columnas_map.get(normalizar_texto("CAJA FUERTE")),
-    "C35": columnas_map.get(normalizar_texto("CAJA METALICA")),
+    "C12": col_forro, "C13": columnas_map.get(normalizar_texto("PLACAS ANTIBALAS")),
+    "D13": columnas_map.get(normalizar_texto("SERIE")), "C14": columnas_map.get(normalizar_texto("CINTO")),
+    "C15": columnas_map.get(normalizar_texto("PORTA ARMA")), "C16": columnas_map.get(normalizar_texto("PORTA RADIO")),
+    "C17": columnas_map.get(normalizar_texto("PORTA TOLETE")), "C18": columnas_map.get(normalizar_texto("TOLETE")),
+    "C21": columnas_map.get(normalizar_texto("CELULAR COPORATIVO")), "C22": columnas_map.get(normalizar_texto("LINTERNA")),
+    "C23": columnas_map.get(normalizar_texto("PONCHO IMPERMEABLE")), "C24": columnas_map.get(normalizar_texto("BOTAS IMPERMEABLES")),
+    "C25": columnas_map.get(normalizar_texto("CHALECO REFLECTIVO")), "C26": columnas_map.get(normalizar_texto("CASCO")),
+    "C27": columnas_map.get(normalizar_texto("DETECTOR METALES")), "C29": columnas_map.get(normalizar_texto("MESA")),
+    "C30": columnas_map.get(normalizar_texto("SILLA")), "C31": columnas_map.get(normalizar_texto("CARPA")),
+    "C32": columnas_map.get(normalizar_texto("GARITA")), "C33": columnas_map.get(normalizar_texto("CONOS TRANSITO")),
+    "C34": columnas_map.get(normalizar_texto("CAJA FUERTE")), "C35": columnas_map.get(normalizar_texto("CAJA METALICA")),
     "C36": columnas_map.get(normalizar_texto("CANDADO"))
 }
 
-col_proyecto_b = columnas_map.get(normalizar_texto("NOMBRE DEL PUESTO"))
-col_nominativo_c = columnas_map.get(normalizar_texto("NOMINATIVO"))
-col_armamento_l = columnas_map.get(normalizar_texto("ARMAMENTO"))
-col_municion_m = columnas_map.get(normalizar_texto("MUNICION"))
-col_radio_n = columnas_map.get(normalizar_texto("RADIO PORTATIL"))
+idx_proyecto = columnas_map.get(normalizar_texto("NOMBRE DEL PUESTO")) or 1
+idx_nominativo = columnas_map.get(normalizar_texto("NOMINATIVO")) or 2
+idx_armamento = columnas_map.get(normalizar_texto("ARMAMENTO")) or 11
+idx_municion = columnas_map.get(normalizar_texto("MUNICION")) or 12
+idx_radio = columnas_map.get(normalizar_texto("RADIO PORTATIL")) or 13
 col_adicionales_ad = columnas_map.get(normalizar_texto("ADICIONALES"))
-
-idx_proyecto = col_proyecto_b if col_proyecto_b else 1
-idx_nominativo = col_nominativo_c if col_nominativo_c else 2
-idx_armamento = col_armamento_l if col_armamento_l else 11
-idx_municion = col_municion_m if col_municion_m else 12
-idx_radio = col_radio_n if col_radio_n else 13
-
-
-def procesar_articulo_adicional(texto_adicional):
-    match = re.match(r"^(\d+)\s+(.*)$", str(texto_adicional).strip())
-    return (int(match.group(1)), match.group(2).strip().upper()) if match else (1, str(texto_adicional).strip().upper())
-
 
 wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
 hoja_molde_firmas = wb_molde_firmas.active
@@ -85,16 +75,26 @@ lista_combinadas_firmas_origen = [{"min_col": r.min_col, "max_col": r.max_col, "
 wb_molde_firmas.close()
 
 diccionario_proyectos = {}
-for f_idx in range(2, hoja_maestra.max_row + 1):
-    proy_nombre = hoja_maestra.cell(row=f_idx, column=idx_proyecto).value
-    nominativo_val = hoja_maestra.cell(row=f_idx, column=idx_nominativo).value
-    if not proy_nombre and not nominativo_val:
+for nombre_hoja in wb_fuente_maestra.sheetnames:
+    nombre_hoja_up = nombre_hoja.strip().upper()
+    if nombre_hoja_up not in hojas_validas_regiones:
         continue
-    proy_limpio = str(proy_nombre).strip().upper() if proy_nombre and str(proy_nombre).strip() else "SIN PROYECTO"
-    proy_limpio = re.sub(r'[\\/*?:\[\]]', '', proy_limpio)
-    if proy_limpio not in diccionario_proyectos:
-        diccionario_proyectos[proy_limpio] = []
-    diccionario_proyectos[proy_limpio].append(f_idx)
+        
+    hoja_provincia_actual = wb_fuente_maestra[nombre_hoja]
+    
+    for f_idx in range(2, hoja_provincia_actual.max_row + 1):
+        proy_nombre = hoja_provincia_actual.cell(row=f_idx, column=idx_proyecto).value
+        nominativo_val = hoja_provincia_actual.cell(row=f_idx, column=idx_nominativo).value
+        if not proy_nombre and not nominativo_val:
+            continue
+            
+        proy_limpio = str(proy_nombre).strip().upper() if proy_nombre and str(proy_nombre).strip() else "SIN PROYECTO"
+        proy_limpio = re.sub(r'[\\/*?:\[\]]', '', proy_limpio)
+        
+        if proy_limpio not in diccionario_proyectos:
+            diccionario_proyectos[proy_limpio] = []
+            
+        diccionario_proyectos[proy_limpio].append({"hoja": hoja_provincia_actual, "fila": f_idx})
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
     hoja_molde_proyecto = wb_salida_proyecto.active
@@ -102,9 +102,12 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
     puestos_procesados_en_proyecto = 0
 
-    for idx_conteo, fila_data_idx in enumerate(filas_asociadas, start=1):
-        val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=idx_proyecto).value or ""
-        val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=idx_nominativo).value or ""
+    for idx_conteo, meta_data in enumerate(filas_asociadas, start=1):
+        hoja_origen_física = meta_data["hoja"]
+        fila_data_idx = meta_data["fila"]
+        
+        val_proyecto_b = hoja_origen_física.cell(row=fila_data_idx, column=idx_proyecto).value or ""
+        val_nominativo_c = hoja_origen_física.cell(row=fila_data_idx, column=idx_nominativo).value or ""
         
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else "PUESTO"
         sigla_pestaña = re.sub(r'[\\/*?:\[\]]', '', sigla_pestaña)
@@ -116,17 +119,17 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         
         nueva_hoja_puesto["B3"] = val_proyecto_b
         nueva_hoja_puesto["F3"] = val_nominativo_c
-        nueva_hoja_puesto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=idx_armamento).value or "").strip()
+        nueva_hoja_puesto["E5"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_armamento).value or "").strip()
         
-        val_mun = hoja_maestra.cell(row=fila_data_idx, column=idx_municion).value
+        val_mun = hoja_origen_física.cell(row=fila_data_idx, column=idx_municion).value
         nueva_hoja_puesto["C6"] = val_mun if val_mun is not None else 0
-        nueva_hoja_puesto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=idx_radio).value or "").strip()
+        nueva_hoja_puesto["E8"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_radio).value or "").strip()
 
         for celda_dest, col_orig_idx in map_directo_celdas.items():
-            val_origen = hoja_maestra.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
+            val_origen = hoja_origen_física.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
             nueva_hoja_puesto[celda_dest] = val_origen if val_origen is not None else "-"
 
-        raw_adicionales = hoja_maestra.cell(row=fila_data_idx, column=col_adicionales_ad).value if col_adicionales_ad else None
+        raw_adicionales = hoja_origen_física.cell(row=fila_data_idx, column=col_adicionales_ad).value if col_adicionales_ad else None
         lista_items_adicionales = [i.strip() for i in str(raw_adicionales or "").split(",") if i.strip()]
         total_items_adicionales = len(lista_items_adicionales)
 
@@ -139,8 +142,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
             nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
             
-            # Corrección de la propiedad de altura apuntando directo a la celda 42 del diccionario
-            alt_base = nueva_hoja_puesto.row_dimensions[42].height or 20
+            alt_base = nueva_hoja_puesto.row_dimensions.height or 20
             for f_nuevas in range(43, 43 + desfase):
                 nueva_hoja_puesto.row_dimensions[f_nuevas].height = alt_base
                 for c_idx in range(1, 12):
@@ -184,7 +186,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     if puestos_procesados_en_proyecto > 0:
         wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
-        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
+        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos consolidando regiones.")
     wb_salida_proyecto.close()
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
