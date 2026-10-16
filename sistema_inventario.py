@@ -60,12 +60,12 @@ col_municion_m = columnas_map.get("MUNICION")
 col_radio_n = columnas_map.get("RADIO PORTATIL")
 col_adicionales_ad = columnas_map.get("ADICIONALES")
 
-def segmentar_articulo_adicional(item_str):
-    item_str = item_str.strip()
-    match = re.match(r"^(\d+)\s+(.*)$", item_str)
+def procesar_articulo_adicional(texto_adicional):
+    texto_adicional = texto_adicional.strip()
+    match = re.match(r"^(\d+)\s+(.*)$", texto_adicional)
     if match:
         return int(match.group(1)), match.group(2).strip().upper()
-    return 1, item_str.upper()
+    return 1, texto_adicional.upper()
 
 # Cargar molde limpio de plantilla para extraer la estructura de firmas original (Filas >= 40)
 wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
@@ -91,11 +91,9 @@ for f_idx in range(2, hoja_maestra.max_row + 1):
 
 # 4. GENERACIÓN DE ARCHIVOS INDEPENDIENTES POR PROYECTO
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
-    # Inicializar un nuevo libro de salida basado en el formato original para este proyecto específico
     wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
     hoja_molde_proyecto = wb_salida_proyecto.active
     
-    # Nombre dinámico del archivo según especificación del usuario
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
     
@@ -106,12 +104,10 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=col_nominativo_c).value
         
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else f"PUESTO_{fila_data_idx}"
-        # Forzar identificador único combinando nominativo y fila para evitar colisiones en pestañas de Excel
         nombre_pestaña_unico = f"{sigla_pestaña}_{fila_data_idx}"
         
-        # Clonar la pestaña desde el molde limpio del libro actual
         nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
-        nueva_hoja_puesto.title = nombre_pestaña_unico[0:30] # Limitar a 30 caracteres por seguridad de Excel
+        nueva_hoja_puesto.title = nombre_pestaña_unico[0:30]
         puestos_procesados_en_proyecto += 1
         
         # Inyección de Encabezados Principales
@@ -134,7 +130,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             else:
                 nueva_hoja_puesto[celda_dest] = "-"
         
-        # --- PROCESAMIENTO DINÁMICO DE ARTÍCULOS ADICIONALES (COL AD) ---
+        # --- PROCESAMIENTO DINÁMICA DE ARTÍCULOS ADICIONALES (COL AD) ---
         raw_adicionales = hoja_maestra.cell(row=fila_data_idx, column=col_adicionales_ad).value
         str_adicionales = str(raw_adicionales).strip() if raw_adicionales is not None else ""
         lista_items_adicionales = [i.strip() for i in str_adicionales.split(",") if i.strip()]
@@ -144,38 +140,32 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         if total_items_adicionales > 3:
             desfase_filas = total_items_adicionales - 3
             
-            # Desvincular temporalmente celdas combinadas de firmas para permitir el desplazamiento físico limpio
             for block in list(nueva_hoja_puesto.merged_cells.ranges):
                 if block.min_row >= 43:
                     nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
             
-            # Almacenar alturas de las firmas antes de alterar el formato
             alturas_firmas_originales = {}
             for r_firmas in range(43, 65):
                 alturas_firmas_originales[r_firmas] = nueva_hoja_puesto.row_dimensions[r_firmas].height
             
-            # Insertar los renglones adicionales a partir de la fila 43
             nueva_hoja_puesto.insert_rows(idx=43, amount=desfase_filas)
             
-            # Replicar estilos visuales exactos y alturas desde la fila base de molde (Fila 42)
-            altura_base_molde = nueva_hoja_puesto.row_dimensions[42].height if 42 in nueva_hoja_puesto.row_dimensions else 20
+            altura_base_molde = nueva_hoja_puesto.row_dimensions.height if 42 in nueva_hoja_puesto.row_dimensions else 20
             for f_nueva in range(43, 43 + desfase_filas):
                 nueva_hoja_puesto.row_dimensions[f_nueva].height = altura_base_molde
                 for c_idx in range(1, 12):
                     cell_origen = nueva_hoja_puesto.cell(row=42, column=c_idx)
-                    cell_destino = nueva_hoja_puesto.cell(row=f_nueva, column=c_idx)
+                    cell_destino = nueva_hoja_puesto.sw_cell if hasattr(nueva_hoja_puesto, 'sw_cell') else nueva_hoja_puesto.cell(row=f_nueva, column=c_idx)
                     if cell_origen.has_style:
                         cell_destino.font = copy(cell_origen.font)
                         cell_destino.border = copy(cell_origen.border)
                         cell_destino.fill = copy(cell_origen.fill)
                         cell_destino.alignment = copy(cell_origen.alignment)
             
-            # Restaurar las alturas de las filas de firmas desplazadas por el desfase matemático
             for r_orig, alt_val in alturas_firmas_originales.items():
                 if alt_val is not None:
                     nueva_hoja_puesto.row_dimensions[r_orig + desfase_filas].height = alt_val
             
-            # Re-combinar las celdas de firmas aplicando el desfase dinámico calculado
             for comb in lista_combinadas_firmas_origen:
                 if comb["min_row"] >= 43:
                     nueva_hoja_puesto.merge_cells(
@@ -183,27 +173,25 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
                         end_row=comb["max_row"] + desfase_filas, end_column=comb["max_col"]
                     )
         
-        # Llenado de los campos de adicionales e inyección de la combinación de celdas D a K
         limite_filas_adicionales = 40 + max(3, total_items_adicionales)
         rango_filas_totales_adicionales = list(range(40, limite_filas_adicionales))
+        
         for idx_ad, fila_actual_ad in enumerate(rango_filas_totales_adicionales):
-
-
-# Combinar dinámicamente las columnas D hasta la K en la sección OTROS para mantener la estética limpia
-nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
-for col_clean in range(4, 12):
-nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
-if idx_ad < total_items_adicionales:
-cantidad_item, nombre_item = segmentar_articulo_adicional(lista_items_adicionales[idx_ad])
-nueva_hoja_puesto[f"A{fila_actual_ad}"] = nombre_item
-nueva_hoja_puesto[f"C{fila_actual_ad}"] = cantidad_item
-else:
-nueva_hoja_puesto[f"A{fila_actual_ad}"] = "OTROS: "
-nueva_hoja_puesto[f"C{fila_actual_ad}"] = None
-# Remover la pestaña molde inicial del libro del proyecto y salvar el archivo final unificado
-if puestos_procesados en proyecto > 0:
-wb_salida_proyecto.remove(hoja_molde_proyecto)
-wb_salida_proyecto.save(ruta_salida_final)
-print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
-wb_salida_proyecto.close()
-print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
+            nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
+            for col_clean in range(4, 12):
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
+                
+            if idx_ad < total_items_adicionales:
+                cantidad_item, nombre_item = procesar_articulo_adicional(lista_items_adicionales[idx_ad])
+                nueva_hoja_puesto[f"A{fila_actual_ad}"] = nombre_item
+                nueva_hoja_puesto[f"C{fila_actual_ad}"] = cantidad_item
+            else:
+                nueva_hoja_puesto[f"A{fila_actual_ad}"] = "OTROS: "
+                nueva_hoja_puesto[f"C{fila_actual_ad}"] = None
+                
+    if puestos_procesados_en_proyecto > 0:
+        wb_salida_proyecto.remove(hoja_molde_proyecto)
+        wb_salida_proyecto.save(ruta_salida_final)
+        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
+        wb_salida_proyecto.close()
+        print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
