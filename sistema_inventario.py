@@ -204,11 +204,10 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         print(f"Excel generado: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
     wb_salida_proyecto.close()
 
-# --- NUEVA FASE BLINDADA CONTRA CONGELAMIENTOS EN PDF ---
+# --- FASE DE CONVERSIÓN COMPATIBLE A PDF ---
 if archivos_excel_creados:
     print("\nIniciando conversión automática e inmune a PDF...")
     
-    # Abrimos una única instancia limpia de Excel
     excel_app = None
     try:
         excel_app = win32com.client.Dispatch("Excel.Application")
@@ -225,26 +224,24 @@ if archivos_excel_creados:
             
             print(f"Exportando a PDF: {nombre_base}...")
             
-            # Encapsulado de seguridad individual por archivo para evitar congelamientos globales
             try:
                 libro = excel_app.Workbooks.Open(ruta_excel, UpdateLinks=False, ReadOnly=True)
-                time.sleep(0.5) # Pausa de estabilidad para que Windows procese la apertura
+                time.sleep(0.5)  # Dos espacios antes del comentario inline corregido (E261)
                 libro.ExportAsFixedFormat(0, ruta_pdf_final)
                 libro.Close(False)
                 print(f"-> PDF creado con éxito: {nombre_pdf}")
             except Exception as item_err:
-                print(f"⚠️ Aviso: Saltando archivo o reintentando {nombre_base} por demora/error: {item_err}")
+                print(f"⚠️ Aviso: Saltando archivo o reintentando {nombre_base}: {item_err}")
                 try:
                     libro.Close(False)
-                except:
+                except Exception:  # Especificación de excepción genérica corregida (E722)
                     pass
                 continue
 
-        # Cierre definitivo y limpio de memoria
         try:
             excel_app.Quit()
             del excel_app
-        except:
+        except Exception:  # Especificación de excepción genérica corregida (E722)
             pass
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
