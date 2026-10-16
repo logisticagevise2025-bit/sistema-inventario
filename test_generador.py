@@ -8,7 +8,6 @@ def test_existencia_archivos():
     archivo_fuente = os.path.join(carpeta, 'INVENTARIO PUESTOS GEVISE 2026.xlsx')
     archivo_plantilla = os.path.join(carpeta, 'FORMATO DE CONTROL DE INVENTARIO GEVISE.xlsx')
     
-    # Si no existen físicamente en tu prueba local, el test creará moldes temporales para validar la estructura
     if not os.path.exists(archivo_fuente):
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -24,6 +23,6 @@ def test_existencia_archivos():
         wb.save(archivo_plantilla)
 
 def test_sintaxis_codigo():
-    """Ejecuta una auditoría de flake8 para asegurar que no falten líneas o indentaciones."""
-    resultado = os.system("flake8 generador.py --max-line-length=127 --ignore=E501,F401,F841")
+    """Ejecuta una auditoría de flake8 sobre el archivo real sistema_inventario.py."""
+    resultado = os.system("flake8 sistema_inventario.py --max-line-length=127 --ignore=E501,F401,F841")
     assert resultado == 0, "Error de CI/CD: El código de Python tiene problemas de indentación o sintaxis rota."
