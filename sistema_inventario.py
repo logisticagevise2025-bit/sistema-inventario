@@ -2,19 +2,27 @@ import openpyxl
 import re
 import os
 import unicodedata
-import shutil
+import win32com.client
 from copy import copy
 
 carpeta_actual = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 archivo_fuente = os.path.join(carpeta_actual, 'INVENTARIO PUESTOS GEVISE 2026.xlsx')
 archivo_plantilla = os.path.join(carpeta_actual, 'FORMATO DE CONTROL DE INVENTARIO GEVISE.xlsx')
 
+# Estructura de carpetas de salida requerida
+carpeta_excel_salida = os.path.join(carpeta_actual, 'INVENTARIOS_EXCEL')
+carpeta_pdf_salida = os.path.join(carpeta_actual, 'INVENTARIOS_PDF')
+
+# Crear las carpetas si no existen
+os.makedirs(carpeta_excel_salida, exist_ok=True)
+os.makedirs(carpeta_pdf_salida, exist_ok=True)
+
 if not os.path.exists(archivo_fuente) or not os.path.exists(archivo_plantilla):
     raise FileNotFoundError("Error: Asegúrate de tener la fuente de verdad y la plantilla en la carpeta.")
 
 wb_fuente_maestra = openpyxl.load_workbook(archivo_fuente, data_only=True)
 
-# 1. DEFINICIÓN DE HOJAS VÁLIDAS POR REGIÓN
+# DEFINICIÓN DE HOJAS VÁLIDAS POR REGIÓN
 hojas_validas_regiones = ["COSTA", "SIERRA", "AMAZONIA"]
 
 
@@ -70,6 +78,11 @@ idx_municion = columnas_map.get(normalizar_texto("MUNICION")) or 12
 idx_radio = columnas_map.get(normalizar_texto("RADIO PORTATIL")) or 13
 col_adicionales_ad = columnas_map.get(normalizar_texto("ADICIONALES"))
 
+wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
+hoja_molde_firmas = wb_molde_firmas.active
+lista_combinadas_firmas_origen = [{"min_col": r.min_col, "max_col": r.max_col, "min_row": r.min_row, "max_row": r.max_row} for r in hoja_molde_firmas.merged_cells.ranges if r.min_row >= 40]
+wb_molde_firmas.close()
+
 diccionario_proyectos = {}
 for nombre_hoja in wb_fuente_maestra.sheetnames:
     nombre_hoja_up = nombre_hoja.strip().upper()
@@ -91,14 +104,16 @@ for nombre_hoja in wb_fuente_maestra.sheetnames:
             diccionario_proyectos[proy_limpio] = []
             
         diccionario_proyectos[proy_limpio].append({"hoja": hoja_provincia_actual, "fila": f_idx})
-# 2. PROCESAMIENTO E INYECCIÓN INDEPENDIENTE PRESERVANDO EL LOGO ORIGINAL
+# Lista para almacenar las rutas de los archivos Excel generados con éxito
+archivos_excel_creados = []
+
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
-    # Creamos una carpeta por Proyecto para organizar los puestos con su logo intacto
-    carpeta_proyecto = os.path.join(carpeta_actual, f"INVENTARIOS {proyecto_k}")
-    if os.path.exists(carpeta_proyecto):
-        shutil.rmtree(carpeta_proyecto)
-    os.makedirs(carpeta_proyecto, exist_ok=True)
+    wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
+    hoja_molde_proyecto = wb_salida_proyecto.active
+    nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     
+    # NUEVO: Guardar directamente dentro de la carpeta INVENTARIOS_EXCEL
+    ruta_salida_final = os.path.join(carpeta_excel_salida, nombre_archivo_salida)
     puestos_procesados_en_proyecto = 0
 
     for idx_conteo, meta_data in enumerate(filas_asociadas, start=1):
@@ -110,31 +125,23 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else "PUESTO"
         sigla_pestaña = re.sub(r'[\\/*?:\[\]]', '', sigla_pestaña)
-        nombre_archivo_puesto = f"{idx_conteo}_{sigla_pestaña}.xlsx"
-        ruta_puesto_individual = os.path.join(carpeta_proyecto, nombre_archivo_puesto)
+        nombre_pestaña_unico = f"{idx_conteo}_{sigla_pestaña}"[0:30]
         
-        # OPERACIÓN CLAVE: Copiamos el archivo completo. Windows arrastra el logo nativo sin corromperlo.
-        shutil.copyfile(archivo_plantilla, ruta_puesto_individual)
-        
-        wb_puesto_individual = openpyxl.load_workbook(ruta_puesto_individual)
-        hoja_actual_puesto = wb_puesto_individual.active
+        nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
+        nueva_hoja_puesto.title = nombre_pestaña_unico
         puestos_procesados_en_proyecto += 1
         
-        # Inyección de datos respetando el archivo original que contiene el logo
-        hoja_actual_puesto["B3"] = val_proyecto_b
-        hoja_actual_puesto["F3"] = val_nominativo_c
-        hoja_actual_puesto["E5"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_armamento).value or "").strip()
+        nueva_hoja_puesto["B3"] = val_proyecto_b
+        nueva_hoja_puesto["F3"] = val_nominativo_c
+        nueva_hoja_puesto["E5"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_armamento).value or "").strip()
         
         val_mun = hoja_origen_física.cell(row=fila_data_idx, column=idx_municion).value
-        hoja_actual_puesto["C6"] = val_mun if val_mun is not None else 0
-        hoja_actual_puesto["E8"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_radio).value or "").strip()
+        nueva_hoja_puesto["C6"] = val_mun if val_mun is not None else 0
+        nueva_hoja_puesto["E8"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_radio).value or "").strip()
 
         for celda_dest, col_orig_idx in map_directo_celdas.items():
-            if col_orig_idx:
-                val_origen = hoja_origen_física.cell(row=fila_data_idx, column=col_orig_idx).value
-                hoja_actual_puesto[celda_dest] = val_origen if val_origen is not None else "-"
-            else:
-                hoja_actual_puesto[celda_dest] = "-"
+            val_origen = hoja_origen_física.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
+            nueva_hoja_puesto[celda_dest] = val_origen if val_origen is not None else "-"
 
         raw_adicionales = hoja_origen_física.cell(row=fila_data_idx, column=col_adicionales_ad).value if col_adicionales_ad else None
         lista_items_adicionales = [i.strip() for i in str(raw_adicionales or "").split(",") if i.strip()]
@@ -142,19 +149,19 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
 
         if total_items_adicionales > 3:
             desfase = total_items_adicionales - 3
-            for rng in list(hoja_actual_puesto.merged_cells.ranges):
+            for rng in list(nueva_hoja_puesto.merged_cells.ranges):
                 if rng.min_row >= 43:
-                    hoja_actual_puesto.unmerge_cells(start_row=rng.min_row, start_column=rng.min_col, end_row=rng.max_row, end_column=rng.max_col)
+                    nueva_hoja_puesto.unmerge_cells(start_row=rng.min_row, start_column=rng.min_col, end_row=rng.max_row, end_column=rng.max_col)
             
-            alturas = {r: hoja_actual_puesto.row_dimensions[r].height for r in range(43, 65)}
-            hoja_actual_puesto.insert_rows(idx=43, amount=desfase)
+            alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
+            nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
             
-            alt_base = hoja_actual_puesto.row_dimensions.height or 20
+            alt_base = nueva_hoja_puesto.row_dimensions.height or 20
             for f_nuevas in range(43, 43 + desfase):
-                hoja_actual_puesto.row_dimensions[f_nuevas].height = alt_base
+                nueva_hoja_puesto.row_dimensions[f_nuevas].height = alt_base
                 for c_idx in range(1, 12):
-                    cell_origen = hoja_actual_puesto.cell(row=42, column=c_idx)
-                    cell_destino = hoja_actual_puesto.cell(row=f_nuevas, column=c_idx)
+                    cell_origen = nueva_hoja_puesto.cell(row=42, column=c_idx)
+                    cell_destino = nueva_hoja_puesto.cell(row=f_nuevas, column=c_idx)
                     if cell_origen.has_style:
                         cell_destino.font = copy(cell_origen.font)
                         cell_destino.border = copy(cell_origen.border)
@@ -163,36 +170,67 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
 
             for r_orig, alt_val in alturas.items():
                 if alt_val is not None:
-                    hoja_actual_puesto.row_dimensions[r_orig + desfase].height = alt_val
+                    nueva_hoja_puesto.row_dimensions[r_orig + desfase].height = alt_val
 
-            for comb in list(hoja_actual_puesto.merged_cells.ranges):
-                if comb.min_row >= 43:
-                    hoja_actual_puesto.merge_cells(start_row=comb.min_row + desfase, start_column=comb.min_col, end_row=comb.max_row + desfase, end_column=comb.max_col)
+            for comb in lista_combinadas_firmas_origen:
+                if comb["min_row"] >= 43:
+                    nueva_hoja_puesto.merge_cells(start_row=comb["min_row"] + desfase, start_column=comb["min_col"], end_row=comb["max_row"] + desfase, end_column=comb["max_col"])
 
         rango_filas_totales_adicionales = list(range(40, 40 + max(3, total_items_adicionales)))
 
         for fila_actual_ad in rango_filas_totales_adicionales:
-            for block in list(hoja_actual_puesto.merged_cells.ranges):
+            for block in list(nueva_hoja_puesto.merged_cells.ranges):
                 if block.min_row == fila_actual_ad and block.max_row == fila_actual_ad and (block.min_col >= 4 or block.max_col <= 11):
-                    hoja_actual_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
+                    nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
 
             for col_clean in range(4, 12):
-                hoja_actual_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
 
             idx_ad = fila_actual_ad - 40
             if idx_ad < total_items_adicionales:
                 cantidad_item, nombre_item = procesar_articulo_adicional(lista_items_adicionales[idx_ad])
-                hoja_actual_puesto.cell(row=fila_actual_ad, column=1).value = nombre_item
-                hoja_actual_puesto.cell(row=fila_actual_ad, column=3).value = cantidad_item
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = nombre_item
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = cantidad_item
             else:
-                hoja_actual_puesto.cell(row=fila_actual_ad, column=1).value = "OTROS: "
-                hoja_actual_puesto.cell(row=fila_actual_ad, column=3).value = None
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = "OTROS: "
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = None
 
-            hoja_actual_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
+            nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
 
-        wb_puesto_individual.save(ruta_puesto_individual)
-        wb_puesto_individual.close()
+    if puestos_procesados_en_proyecto > 0:
+        wb_salida_proyecto.remove(hoja_molde_proyecto)
+        wb_salida_proyecto.save(ruta_salida_final)
+        archivos_excel_creados.append(ruta_salida_final)
+        print(f"Excel generado: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
+    wb_salida_proyecto.close()
 
-    print(f"Carpeta creada exitosamente: INVENTARIOS {proyecto_k} con {puestos_procesados_en_proyecto} archivos individuales con LOGO INTACTO.")
+# --- NUEVO: FASE AUTOMÁTICA DE CONVERSIÓN A PDF EN CARPETA PROPIA ---
+if archivos_excel_creados:
+    print("\nIniciando conversión automática a PDF...")
+    try:
+        excel_app = win32com.client.Dispatch("Excel.Application")
+        excel_app.Visible = False
+        excel_app.DisplayAlerts = False
+
+        for ruta_excel in archivos_excel_creados:
+            nombre_base = os.path.basename(ruta_excel)
+            nombre_pdf = nombre_base.replace(".xlsx", ".pdf")
+            # Guardar directamente dentro de la carpeta INVENTARIOS_PDF
+            ruta_pdf_final = os.path.join(carpeta_pdf_salida, nombre_pdf)
+            
+            print(f"Exportando a PDF: {nombre_base}...")
+            libro = excel_app.Workbooks.Open(ruta_excel)
+            # 0 representa el formato xlTypePDF nativo de Excel
+            libro.ExportAsFixedFormat(0, ruta_pdf_final)
+            libro.Close(False)
+            print(f"-> PDF creado con éxito: {nombre_pdf}")
+
+        excel_app.Quit()
+        del excel_app
+    except Exception as err:
+        print(f"⚠️ Error durante la exportación a PDF: {err}")
+        print("Asegúrate de tener Microsoft Excel instalado y haber ejecutado 'pip install pywin32'.")
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
+print(f"📂 Archivos Excel guardados en: {os.path.basename(carpeta_excel_salida)}")
+print(f"📂 Archivos PDF guardados en: {os.path.basename(carpeta_pdf_salida)}")
