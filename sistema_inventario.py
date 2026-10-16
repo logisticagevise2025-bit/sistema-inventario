@@ -116,14 +116,17 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
             nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
             
-            alt_base = nueva_hoja_puesto.row_dimensions[42].height or 20
-            for f_n evas in range(43, 43 + desfase):
-                nueva_hoja_puesto.row_dimensions[f_nevas].height = alt_base
+            alt_base = nueva_hoja_puesto.row_dimensions.height or 20
+            for f_nuevas in range(43, 43 + desfase):
+                nueva_hoja_puesto.row_dimensions[f_nuevas].height = alt_base
                 for c_idx in range(1, 12):
                     cell_origen = nueva_hoja_puesto.cell(row=42, column=c_idx)
-                    cell_destino = nueva_hoja_puesto.cell(row=f_nevas, column=c_idx)
+                    cell_destino = nueva_hoja_puesto.cell(row=f_nuevas, column=c_idx)
                     if cell_origen.has_style:
-                        cell_destino.font, cell_destino.border, cell_destino.fill, cell_destino.alignment = copy(cell_origen.font), copy(cell_origen.border), copy(cell_origen.fill), copy(cell_origen.alignment)
+                        cell_destino.font = copy(cell_origen.font)
+                        cell_destino.border = copy(cell_origen.border)
+                        cell_destino.fill = copy(cell_origen.fill)
+                        cell_destino.alignment = copy(cell_origen.alignment)
 
             for r_orig, alt_val in alturas.items():
                 if alt_val is not None:
