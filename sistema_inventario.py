@@ -69,15 +69,13 @@ lista_combinadas_firmas_origen = [{"min_col": r.min_col, "max_col": r.max_col, "
 wb_molde_firmas.close()
 
 diccionario_proyectos = {}
-for f_idx in range(2, hoja_maestra.max_row + 1):
-    proy_nombre = hoja_maestra.cell(row=f_idx, column=col_proyecto_b).value if col_proyecto_b else None
-    proy_limpio = str(proy_nombre).strip().upper() if proy_nombre and str(proy_nombre).strip() else "SIN PROYECTO ASSIGNED"
-    if proy_limpio not in diccionario_proyectos:
-        diccionario_proyectos[proy_limpio] = []
-    diccionario_proyectos[proy_limpio].append(f_idx)
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
-    wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
-    hoja_molde_proyecto = wb_salida_proyecto.active
+    # Creamos un libro nuevo por proyecto donde consolidaremos las pestañas de los puestos
+    wb_salida_proyecto = openpyxl.Workbook()
+    # Eliminamos la pestaña vacía que crea openpyxl por defecto
+    default_sheet = wb_salida_proyecto.active
+    wb_salida_proyecto.remove(default_sheet)
+    
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
     puestos_procesados_en_proyecto = 0
@@ -86,25 +84,25 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=col_proyecto_b).value if col_proyecto_b else ""
         val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=col_nominativo_c).value if col_nominativo_c else ""
         
-        # Generar un prefijo numérico único para evitar el bucle infinito de nombres duplicados en openpyxl
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else "PUESTO"
         nombre_pestaña_unico = f"{idx_conteo}_{sigla_pestaña}"[0:30]
         
-        nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
-        nueva_hoja_puesto.title = nombre_pestaña_unico
-        puestos_procesados_en_proyecto += 1
-
-        nueva_hoja_puesto["B3"] = val_proyecto_b
-        nueva_hoja_puesto["F3"] = val_nominativo_c
-        nueva_hoja_puesto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value).strip() if col_armamento_l and hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value else ""
+        # OPERACIÓN ULTRA RÁPIDA: Cargamos un molde fresco e independiente directamente de la plantilla
+        wb_molde_fresco = openpyxl.load_workbook(archivo_plantilla)
+        hoja_molde_proyecto = wb_molde_fresco.active
+        
+        # Inyección de Encabezados Principales
+        hoja_molde_proyecto["B3"] = val_proyecto_b
+        hoja_molde_proyecto["F3"] = val_nominativo_c
+        hoja_molde_proyecto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value).strip() if col_armamento_l and hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value else ""
         
         val_mun = hoja_maestra.cell(row=fila_data_idx, column=col_municion_m).value if col_municion_m else None
-        nueva_hoja_puesto["C6"] = val_mun if val_mun is not None else 0
-        nueva_hoja_puesto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value).strip() if col_radio_n and hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value else ""
+        hoja_molde_proyecto["C6"] = val_mun if val_mun is not None else 0
+        hoja_molde_proyecto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value).strip() if col_radio_n and hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value else ""
 
         for celda_dest, col_orig_idx in map_directo_celdas.items():
             val_origen = hoja_maestra.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
-            nueva_hoja_puesto[celda_dest] = val_origen if val_origen is not None else "-"
+            hoja_molde_proyecto[celda_dest] = val_origen if val_origen is not None else "-"
 
         raw_adicionales = hoja_maestra.cell(row=fila_data_idx, column=col_adicionales_ad).value if col_adicionales_ad else None
         lista_items_adicionales = [i.strip() for i in str(raw_adicionales or "").split(",") if i.strip()]
@@ -112,19 +110,19 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
 
         if total_items_adicionales > 3:
             desfase = total_items_adicionales - 3
-            for rng in list(nueva_hoja_puesto.merged_cells.ranges):
+            for rng in list(hoja_molde_proyecto.merged_cells.ranges):
                 if rng.min_row >= 43:
-                    nueva_hoja_puesto.unmerge_cells(start_row=rng.min_row, start_column=rng.min_col, end_row=rng.max_row, end_column=rng.max_col)
+                    hoja_molde_proyecto.unmerge_cells(start_row=rng.min_row, start_column=rng.min_col, end_row=rng.max_row, end_column=rng.max_col)
             
-            alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
-            nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
+            alturas = {r: hoja_molde_proyecto.row_dimensions[r].height for r in range(43, 65)}
+            hoja_molde_proyecto.insert_rows(idx=43, amount=desfase)
             
-            alt_base = nueva_hoja_puesto.row_dimensions.height or 20
+            alt_base = hoja_molde_proyecto.row_dimensions.height or 20
             for f_nuevas in range(43, 43 + desfase):
-                nueva_hoja_puesto.row_dimensions[f_nuevas].height = alt_base
+                hoja_molde_proyecto.row_dimensions[f_nuevas].height = alt_base
                 for c_idx in range(1, 12):
-                    cell_origen = nueva_hoja_puesto.cell(row=42, column=c_idx)
-                    cell_destino = nueva_hoja_puesto.cell(row=f_nuevas, column=c_idx)
+                    cell_origen = hoja_molde_proyecto.cell(row=42, column=c_idx)
+                    cell_destino = hoja_molde_proyecto.cell(row=f_nuevas, column=c_idx)
                     if cell_origen.has_style:
                         cell_destino.font = copy(cell_origen.font)
                         cell_destino.border = copy(cell_origen.border)
@@ -133,37 +131,41 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
 
             for r_orig, alt_val in alturas.items():
                 if alt_val is not None:
-                    nueva_hoja_puesto.row_dimensions[r_orig + desfase].height = alt_val
+                    hoja_molde_proyecto.row_dimensions[r_orig + desfase].height = alt_val
 
             for comb in lista_combinadas_firmas_origen:
                 if comb["min_row"] >= 43:
-                    nueva_hoja_puesto.merge_cells(start_row=comb["min_row"] + desfase, start_column=comb["min_col"], end_row=comb["max_row"] + desfase, end_column=comb["max_col"])
+                    hoja_molde_proyecto.merge_cells(start_row=comb["min_row"] + desfase, start_column=comb["min_col"], end_row=comb["max_row"] + desfase, end_column=comb["max_col"])
 
         rango_filas_totales_adicionales = list(range(40, 40 + max(3, total_items_adicionales)))
 
         for fila_actual_ad in rango_filas_totales_adicionales:
-            for block in list(nueva_hoja_puesto.merged_cells.ranges):
+            for block in list(hoja_molde_proyecto.merged_cells.ranges):
                 if block.min_row == fila_actual_ad and block.max_row == fila_actual_ad and (block.min_col >= 4 or block.max_col <= 11):
-                    nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
+                    hoja_molde_proyecto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
 
             for col_clean in range(4, 12):
-                nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
+                hoja_molde_proyecto.cell(row=fila_actual_ad, column=col_clean).value = None
 
             idx_ad = fila_actual_ad - 40
             if idx_ad < total_items_adicionales:
                 cantidad_item, nombre_item = procesar_articulo_adicional(lista_items_adicionales[idx_ad])
-                nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = nombre_item
-                nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = cantidad_item
+                hoja_molde_proyecto.cell(row=fila_actual_ad, column=1).value = nombre_item
+                hoja_molde_proyecto.cell(row=fila_actual_ad, column=3).value = cantidad_item
             else:
-                nueva_hoja_puesto.cell(row=fila_actual_ad, column=1).value = "OTROS: "
-                nueva_hoja_puesto.cell(row=fila_actual_ad, column=3).value = None
+                hoja_molde_proyecto.cell(row=fila_actual_ad, column=1).value = "OTROS: "
+                hoja_molde_proyecto.cell(row=fila_actual_ad, column=3).value = None
 
-            nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
+            hoja_molde_proyecto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
+
+        # Clonamos la estructura armada de vuelta al libro consolidado del proyecto de manera directa
+        hoja_molde_proyecto.title = nombre_pestaña_unico
+        wb_salida_proyecto._sheets.append(hoja_molde_proyecto)
+        puestos_procesados_en_proyecto += 1
 
     if puestos_procesados_en_proyecto > 0:
-        wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
-        print(f"Archivo generado exitosamente: {nombre_archivo_salida}")
+        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
     wb_salida_proyecto.close()
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
