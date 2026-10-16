@@ -200,7 +200,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
                         nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
             # Limpiar contenido de forma segura sin restricciones de solo lectura
             for col_clean in range(4, 12):
-            nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
+                nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
             # Aplicar inyección de los datos correspondientes
             idx_ad = fila_actual_ad - 40
                 if idx_ad < total_items_adicionales:
