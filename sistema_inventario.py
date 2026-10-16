@@ -2,13 +2,12 @@ import openpyxl
 import re
 import os
 import unicodedata
+import shutil
 from copy import copy
-from openpyxl.drawing.image import Image as OpenpyxlImage
 
 carpeta_actual = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 archivo_fuente = os.path.join(carpeta_actual, 'INVENTARIO PUESTOS GEVISE 2026.xlsx')
 archivo_plantilla = os.path.join(carpeta_actual, 'FORMATO DE CONTROL DE INVENTARIO GEVISE.xlsx')
-ruta_logo_png = os.path.join(carpeta_actual, 'logo_gevise.png')
 
 if not os.path.exists(archivo_fuente) or not os.path.exists(archivo_plantilla):
     raise FileNotFoundError("Error: Asegúrate de tener la fuente de verdad y la plantilla en la carpeta.")
@@ -59,7 +58,7 @@ map_directo_celdas = {
     "C25": columnas_map.get(normalizar_texto("CHALECO REFLECTIVO")), "C26": columnas_map.get(normalizar_texto("CASCO")),
     "C27": columnas_map.get(normalizar_texto("DETECTOR METALES")), "C29": columnas_map.get(normalizar_texto("MESA")),
     "C30": columnas_map.get(normalizar_texto("SILLA")), "C31": columnas_map.get(normalizar_texto("CARPA")),
-    "C32": columnas_map.get(normalizar_texto("GARITA")), "C33": columnas_map.get(normalizar_texto("CONOS TRANSITO")),
+    "C32": columnas_map.get(normalizar_texto("GARITA")), "C33": columnas_map.get(normalizar_transit_or_cones := columnas_map.get(normalizar_texto("CONOS TRANSITO"))),
     "C34": columnas_map.get(normalizar_texto("CAJA FUERTE")), "C35": columnas_map.get(normalizar_texto("CAJA METALICA")),
     "C36": columnas_map.get(normalizar_texto("CANDADO"))
 }
@@ -98,10 +97,16 @@ for nombre_hoja in wb_fuente_maestra.sheetnames:
             
         diccionario_proyectos[proy_limpio].append({"hoja": hoja_provincia_actual, "fila": f_idx})
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
-    wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
-    hoja_molde_proyecto = wb_salida_proyecto.active
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
+    
+    # ESTRATEGIA INMUNE A FALTA DE LIBRERÍAS: Copiamos el archivo de plantilla completo.
+    # Al hacer la copia binaria directa con shutil, Excel conserva las imágenes nativas al 100%.
+    shutil.copyfile(archivo_plantilla, ruta_salida_final)
+    
+    # Abrimos el archivo clonado recién creado
+    wb_salida_proyecto = openpyxl.load_workbook(ruta_salida_final)
+    hoja_molde_proyecto = wb_salida_proyecto.active
     puestos_procesados_en_proyecto = 0
 
     for idx_conteo, meta_data in enumerate(filas_asociadas, start=1):
@@ -115,18 +120,10 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         sigla_pestaña = re.sub(r'[\\/*?:\[\]]', '', sigla_pestaña)
         nombre_pestaña_unico = f"{idx_conteo}_{sigla_pestaña}"[0:30]
         
+        # Al usar copy_worksheet sobre la hoja que ya fue abierta con el logo nativo de Windows, se mantiene el diseño
         nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
         nueva_hoja_puesto.title = nombre_pestaña_unico
         puestos_procesados_en_proyecto += 1
-        
-        # --- INYECCIÓN Y ESCALADO DIRECTO DEL LOGO EN LA CELDA A1 ---
-        if os.path.exists(ruta_logo_png):
-            img_logo = OpenpyxlImage(ruta_logo_png)
-            # Escalamos el logo a un tamaño óptimo para celdas de control (aprox 120px de ancho)
-            img_logo.width = 120
-            img_logo.height = 55
-            img_logo.anchor = "A1"
-            nueva_hoja_puesto.add_image(img_logo)
         
         nueva_hoja_puesto["B3"] = val_proyecto_b
         nueva_hoja_puesto["F3"] = val_nominativo_c
@@ -137,8 +134,11 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         nueva_hoja_puesto["E8"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_radio).value or "").strip()
 
         for celda_dest, col_orig_idx in map_directo_celdas.items():
-            val_origen = hoja_origen_física.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
-            nueva_hoja_puesto[celda_dest] = val_origen if val_origen is not None else "-"
+            if col_orig_idx:
+                val_origen = hoja_origen_física.cell(row=fila_data_idx, column=col_orig_idx).value
+                nueva_hoja_puesto[celda_dest] = val_origen if val_origen is not None else "-"
+            else:
+                nueva_hoja_puesto[celda_dest] = "-"
 
         raw_adicionales = hoja_origen_física.cell(row=fila_data_idx, column=col_adicionales_ad).value if col_adicionales_ad else None
         lista_items_adicionales = [i.strip() for i in str(raw_adicionales or "").split(",") if i.strip()]
@@ -195,17 +195,9 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
 
     if puestos_procesados_en_proyecto > 0:
-        # También inyectamos el logo en la primera pestaña molde residual si se mantiene visible
-        if os.path.exists(ruta_logo_png):
-            img_base_logo = OpenpyxlImage(ruta_logo_png)
-            img_base_logo.width = 120
-            img_base_logo.height = 55
-            img_base_logo.anchor = "A1"
-            hoja_molde_proyecto.add_image(img_base_logo)
-            
         wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
-        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos consolidando regiones.")
+        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos consolidando regiones y preservando logo.")
     wb_salida_proyecto.close()
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
