@@ -13,7 +13,7 @@ if not os.path.exists(archivo_fuente) or not os.path.exists(archivo_plantilla):
 
 wb_fuente_maestra = openpyxl.load_workbook(archivo_fuente, data_only=True)
 
-# 1. DEFINICIÓN ACTUALIZADA DE HOJAS VÁLIDAS POR REGIÓN
+# 1. DEFINICIÓN DE HOJAS VÁLIDAS POR REGIÓN
 hojas_validas_regiones = ["COSTA", "SIERRA", "AMAZONIA"]
 
 
@@ -57,7 +57,7 @@ map_directo_celdas = {
     "C25": columnas_map.get(normalizar_texto("CHALECO REFLECTIVO")), "C26": columnas_map.get(normalizar_texto("CASCO")),
     "C27": columnas_map.get(normalizar_texto("DETECTOR METALES")), "C29": columnas_map.get(normalizar_texto("MESA")),
     "C30": columnas_map.get(normalizar_texto("SILLA")), "C31": columnas_map.get(normalizar_texto("CARPA")),
-    "C32": columnas_map.get(normalizar_texto("GARITA")), "C33": columnas_map.get(normalizar_texto("CONOS TRANSITO")),
+    "C32": columnas_map.get(normalizar_texto("GARITA")), "C33": columnas_map.get(normalizar_transit_or_cones := normalizar_texto("CONOS TRANSITO")),
     "C34": columnas_map.get(normalizar_texto("CAJA FUERTE")), "C35": columnas_map.get(normalizar_texto("CAJA METALICA")),
     "C36": columnas_map.get(normalizar_texto("CANDADO"))
 }
@@ -72,6 +72,12 @@ col_adicionales_ad = columnas_map.get(normalizar_texto("ADICIONALES"))
 wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
 hoja_molde_firmas = wb_molde_firmas.active
 lista_combinadas_firmas_origen = [{"min_col": r.min_col, "max_col": r.max_col, "min_row": r.min_row, "max_row": r.max_row} for r in hoja_molde_firmas.merged_cells.ranges if r.min_row >= 40]
+
+# --- NUEVO: EXTRACCIÓN EXTRA-SEGURA DEL LOGO DE LA PLANTILLA MOLDE ---
+logo_molde_original = None
+if len(hoja_molde_firmas._images) > 0:
+    logo_molde_original = hoja_molde_firmas._images[0]
+
 wb_molde_firmas.close()
 
 diccionario_proyectos = {}
@@ -117,6 +123,13 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         nueva_hoja_puesto.title = nombre_pestaña_unico
         puestos_procesados_en_proyecto += 1
         
+        # --- NUEVO: RE-INYECCIÓN COMPATIBLE DEL LOGO EN LA CELDA A1 DEL NUEVO PUESTO ---
+        if logo_molde_original is not None:
+            # Re-asignar una nueva copia del logo para evitar colisiones de id en las hojas clonadas
+            logo_clonado = copy(logo_molde_original)
+            logo_clonado.anchor = "A1"
+            nueva_hoja_puesto.add_image(logo_clonado)
+        
         nueva_hoja_puesto["B3"] = val_proyecto_b
         nueva_hoja_puesto["F3"] = val_nominativo_c
         nueva_hoja_puesto["E5"] = str(hoja_origen_física.cell(row=fila_data_idx, column=idx_armamento).value or "").strip()
@@ -142,7 +155,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
             nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
             
-            alt_base = nueva_hoja_puesto.row_dimensions.height or 20
+            alt_base = nueva_hoja_puesto.row_dimensions[f_idx].height if f_idx in nueva_hoja_puesto.row_dimensions else 20
             for f_nuevas in range(43, 43 + desfase):
                 nueva_hoja_puesto.row_dimensions[f_nuevas].height = alt_base
                 for c_idx in range(1, 12):
@@ -184,6 +197,12 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
 
     if puestos_procesados_en_proyecto > 0:
+        # Asegurar re-inyección en la primera hoja molde base que queda visible
+        if logo_molde_original is not None:
+            logo_base_clon = copy(logo_molde_original)
+            logo_base_clon.anchor = "A1"
+            hoja_molde_proyecto.add_image(logo_base_clon)
+            
         wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
         print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos consolidando regiones.")
