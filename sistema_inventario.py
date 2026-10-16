@@ -60,12 +60,14 @@ col_municion_m = columnas_map.get("MUNICION")
 col_radio_n = columnas_map.get("RADIO PORTATIL")
 col_adicionales_ad = columnas_map.get("ADICIONALES")
 
+
 def procesar_articulo_adicional(texto_adicional):
     texto_adicional = texto_adicional.strip()
     match = re.match(r"^(\d+)\s+(.*)$", texto_adicional)
     if match:
         return int(match.group(1)), match.group(2).strip().upper()
     return 1, texto_adicional.upper()
+
 
 # Cargar molde limpio de plantilla para extraer la estructura de firmas original (Filas >= 40)
 wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
@@ -93,32 +95,32 @@ for f_idx in range(2, hoja_maestra.max_row + 1):
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
     hoja_molde_proyecto = wb_salida_proyecto.active
-    
+
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
-    
+
     puestos_procesados_en_proyecto = 0
-    
+
     for fila_data_idx in filas_asociadas:
         val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=col_proyecto_b).value
         val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=col_nominativo_c).value
-        
+
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else f"PUESTO_{fila_data_idx}"
         nombre_pestaña_unico = f"{sigla_pestaña}_{fila_data_idx}"
-        
+
         nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
         nueva_hoja_puesto.title = nombre_pestaña_unico[0:30]
         puestos_procesados_en_proyecto += 1
-        
+
         # Inyección de Encabezados Principales
         nueva_hoja_puesto["B3"] = val_proyecto_b
         nueva_hoja_puesto["F3"] = val_nominativo_c
-        
+
         # Inyección de Armamento, Munición y Comunicaciones (L, M, N)
         nueva_hoja_puesto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value).strip() if hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value else ""
         nueva_hoja_puesto["C6"] = hoja_maestra.cell(row=fila_data_idx, column=col_municion_m).value if hoja_maestra.cell(row=fila_data_idx, column=col_municion_m).value is not None else 0
         nueva_hoja_puesto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value).strip() if hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value else ""
-        
+
         # Inyección Automatizada de Filas 12 a 36 utilizando el mapeo dinámico
         for celda_dest, col_orig_idx in map_directo_celdas.items():
             if col_orig_idx:
@@ -129,28 +131,32 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
                     nueva_hoja_puesto[celda_dest] = "-"
             else:
                 nueva_hoja_puesto[celda_dest] = "-"
-        
+
         # --- PROCESAMIENTO DINÁMICO DE ARTÍCULOS ADICIONALES (COL AD) ---
         raw_adicionales = hoja_maestra.cell(row=fila_data_idx, column=col_adicionales_ad).value
         str_adicionales = str(raw_adicionales).strip() if raw_adicionales is not None else ""
         lista_items_adicionales = [i.strip() for i in str_adicionales.split(",") if i.strip()]
         total_items_adicionales = len(lista_items_adicionales)
-        
+
         desfase_filas = 0
         if total_items_adicionales > 3:
             desfase_filas = total_items_adicionales - 3
-            
+
             for block in list(nueva_hoja_puesto.merged_cells.ranges):
                 if block.min_row >= 43:
                     nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
-            
+
             alturas_firmas_originales = {}
             for r_firmas in range(43, 65):
                 alturas_firmas_originales[r_firmas] = nueva_hoja_puesto.row_dimensions[r_firmas].height
-            
+
             nueva_hoja_puesto.insert_rows(idx=43, amount=desfase_filas)
-            
-            altura_base_molde = nueva_hoja_puesto.row_dimensions.height if 42 in nueva_hoja_puesto.row_dimensions else 20
+
+            if 42 in nueva_hoja_puesto.row_dimensions:
+                altura_base_molde = nueva_hoja_puesto.row_dimensions.height
+            else:
+                altura_base_molde = 20
+
             for f_nueva in range(43, 43 + desfase_filas):
                 nueva_hoja_puesto.row_dimensions[f_nueva].height = altura_base_molde
                 for c_idx in range(1, 12):
@@ -161,26 +167,26 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
                         cell_destino.border = copy(cell_origen.border)
                         cell_destino.fill = copy(cell_origen.fill)
                         cell_destino.alignment = copy(cell_origen.alignment)
-            
+
             for r_orig, alt_val in alturas_firmas_originales.items():
                 if alt_val is not None:
                     nueva_hoja_puesto.row_dimensions[r_orig + desfase_filas].height = alt_val
-            
+
             for comb in lista_combinadas_firmas_origen:
                 if comb["min_row"] >= 43:
                     nueva_hoja_puesto.merge_cells(
                         start_row=comb["min_row"] + desfase_filas, start_column=comb["min_col"],
                         end_row=comb["max_row"] + desfase_filas, end_column=comb["max_col"]
                     )
-        
+
         limite_filas_adicionales = 40 + max(3, total_items_adicionales)
         rango_filas_totales_adicionales = list(range(40, limite_filas_adicionales))
-        
+
         for idx_ad, fila_actual_ad in enumerate(rango_filas_totales_adicionales):
             nueva_hoja_puesto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
             for col_clean in range(4, 12):
                 nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
-                
+
             if idx_ad < total_items_adicionales:
                 cantidad_item, nombre_item = procesar_articulo_adicional(lista_items_adicionales[idx_ad])
                 nueva_hoja_puesto[f"A{fila_actual_ad}"] = nombre_item
@@ -188,7 +194,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             else:
                 nueva_hoja_puesto[f"A{fila_actual_ad}"] = "OTROS: "
                 nueva_hoja_puesto[f"C{fila_actual_ad}"] = None
-                
+
     if puestos_procesados_en_proyecto > 0:
         wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
