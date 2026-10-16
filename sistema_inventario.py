@@ -158,12 +158,16 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
 
             hoja_molde_proyecto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
 
-        # Clonamos la estructura armada de vuelta al libro consolidado del proyecto de manera directa
+        # Asignar el nombre único a la pestaña trabajada
         hoja_molde_proyecto.title = nombre_pestaña_unico
+        
+        # OPERACIÓN DE ESCRITURA FÍSICA: Enlazamos la hoja clonada directamente al libro de salida
+        hoja_molde_proyecto._parent = wb_salida_proyecto
         wb_salida_proyecto._sheets.append(hoja_molde_proyecto)
         puestos_procesados_en_proyecto += 1
 
     if puestos_procesados_en_proyecto > 0:
+        # Forzar la creación e inicialización física del archivo en Windows
         wb_salida_proyecto.save(ruta_salida_final)
         print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
     wb_salida_proyecto.close()
