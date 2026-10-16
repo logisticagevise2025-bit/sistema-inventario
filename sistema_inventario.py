@@ -130,7 +130,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             else:
                 nueva_hoja_puesto[celda_dest] = "-"
         
-        # --- PROCESAMIENTO DINÁMICA DE ARTÍCULOS ADICIONALES (COL AD) ---
+        # --- PROCESAMIENTO DINÁMICO DE ARTÍCULOS ADICIONALES (COL AD) ---
         raw_adicionales = hoja_maestra.cell(row=fila_data_idx, column=col_adicionales_ad).value
         str_adicionales = str(raw_adicionales).strip() if raw_adicionales is not None else ""
         lista_items_adicionales = [i.strip() for i in str_adicionales.split(",") if i.strip()]
@@ -155,7 +155,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
                 nueva_hoja_puesto.row_dimensions[f_nueva].height = altura_base_molde
                 for c_idx in range(1, 12):
                     cell_origen = nueva_hoja_puesto.cell(row=42, column=c_idx)
-                    cell_destino = nueva_hoja_puesto.sw_cell if hasattr(nueva_hoja_puesto, 'sw_cell') else nueva_hoja_puesto.cell(row=f_nueva, column=c_idx)
+                    cell_destino = nueva_hoja_puesto.cell(row=f_nueva, column=c_idx)
                     if cell_origen.has_style:
                         cell_destino.font = copy(cell_origen.font)
                         cell_destino.border = copy(cell_origen.border)
