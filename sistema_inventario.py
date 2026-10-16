@@ -24,8 +24,18 @@ def normalizar_texto(texto):
 
 columnas_map = {normalizar_texto(hoja_maestra.cell(row=1, column=c).value): c for c in range(1, hoja_maestra.max_column + 1) if hoja_maestra.cell(row=1, column=c).value}
 
+# Búsqueda flexible e infalible para el Forro de Chaleco
+col_forro = columnas_map.get(normalizar_texto("FORRO DE CHALECO"))
+if not col_forro:
+    col_forro = columnas_map.get(normalizar_texto("FORRO CHALECO"))
+if not col_forro:
+    for k, v in columnas_map.items():
+        if "FORRO" in k:
+            col_forro = v
+            break
+
 map_directo_celdas = {
-    "C12": columnas_map.get(normalizar_texto("FORRO DE CHALECO")),
+    "C12": col_forro,
     "C13": columnas_map.get(normalizar_texto("PLACAS ANTIBALAS")),
     "D13": columnas_map.get(normalizar_texto("SERIE")),
     "C14": columnas_map.get(normalizar_texto("CINTO")),
@@ -86,7 +96,6 @@ for f_idx in range(2, hoja_maestra.max_row + 1):
         diccionario_proyectos[proy_limpio] = []
     diccionario_proyectos[proy_limpio].append(f_idx)
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
-    # Estrategia de clonación limpia nativa por cada proyecto independiente
     wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
     hoja_molde_proyecto = wb_salida_proyecto.active
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
@@ -101,7 +110,6 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         sigla_pestaña = re.sub(r'[\\/*?:\[\]]', '', sigla_pestaña)
         nombre_pestaña_unico = f"{idx_conteo}_{sigla_pestaña}"[0:30]
         
-        # Copiar hoja dentro de la misma instancia nativa del libro del proyecto (Mantiene estilos intactos)
         nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
         nueva_hoja_puesto.title = nombre_pestaña_unico
         puestos_procesados_en_proyecto += 1
@@ -131,7 +139,8 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
             alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
             nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
             
-            alt_base = nueva_hoja_puesto.row_dimensions.height or 20
+            # Corrección de la propiedad de altura apuntando directo a la celda 42 del diccionario
+            alt_base = nueva_hoja_puesto.row_dimensions[42].height or 20
             for f_nuevas in range(43, 43 + desfase):
                 nueva_hoja_puesto.row_dimensions[f_nuevas].height = alt_base
                 for c_idx in range(1, 12):
