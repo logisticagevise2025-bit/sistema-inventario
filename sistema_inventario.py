@@ -82,13 +82,16 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
     puestos_procesados_en_proyecto = 0
 
-    for fila_data_idx in filas_asociadas:
+    for idx_conteo, fila_data_idx in enumerate(filas_asociadas, start=1):
         val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=col_proyecto_b).value if col_proyecto_b else ""
         val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=col_nominativo_c).value if col_nominativo_c else ""
         
-        sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else f"PUESTO_{fila_data_idx}"
+        # Generar un prefijo numérico único para evitar el bucle infinito de nombres duplicados en openpyxl
+        sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else "PUESTO"
+        nombre_pestaña_unico = f"{idx_conteo}_{sigla_pestaña}"[0:30]
+        
         nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
-        nueva_hoja_puesto.title = f"{sigla_pestaña}_{fila_data_idx}"[0:30]
+        nueva_hoja_puesto.title = nombre_pestaña_unico
         puestos_procesados_en_proyecto += 1
 
         nueva_hoja_puesto["B3"] = val_proyecto_b
