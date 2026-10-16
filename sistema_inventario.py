@@ -4,40 +4,25 @@ import os
 import unicodedata
 from copy import copy
 
-# 1. ENTORNO DE DIRECTORIOS LOCALES
 carpeta_actual = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-
 archivo_fuente = os.path.join(carpeta_actual, 'INVENTARIO PUESTOS GEVISE 2026.xlsx')
 archivo_plantilla = os.path.join(carpeta_actual, 'FORMATO DE CONTROL DE INVENTARIO GEVISE.xlsx')
 
-if not os.path.exists(archivo_fuente):
-    raise FileNotFoundError(f"Error crítico: No se encuentra la fuente de verdad '{os.path.basename(archivo_fuente)}' en: {carpeta_actual}")
-if not os.path.exists(archivo_plantilla):
-    raise FileNotFoundError(f"Error crítico: No se encuentra la plantilla base '{os.path.basename(archivo_plantilla)}' en: {carpeta_actual}")
+if not os.path.exists(archivo_fuente) or not os.path.exists(archivo_plantilla):
+    raise FileNotFoundError("Error: Asegúrate de tener la fuente de verdad y la plantilla en la carpeta.")
 
 wb_fuente_maestra = openpyxl.load_workbook(archivo_fuente, data_only=True)
 hoja_maestra = wb_fuente_maestra.active
 
 
 def normalizar_texto(texto):
-    """Elimina tildes, espacios extras y caracteres especiales para un mapeo infalible."""
     if not texto:
         return ""
-    texto_str = str(texto).strip().upper()
-    texto_normalizado = ''.join(
-        c for c in unicodedata.normalize('NFD', texto_str)
-        if unicodedata.category(c) != 'Mn'
-    )
+    texto_normalizado = ''.join(c for c in unicodedata.normalize('NFD', str(texto).strip().upper()) if unicodedata.category(c) != 'Mn')
     return re.sub(r'\s+', ' ', texto_normalizado)
 
 
-# 2. MAPEO ROBUSTO DINÁMICO POR ENCABEZADOS (FILA 1)
-columnas_map = {}
-for col_idx in range(1, hoja_maestra.max_column + 1):
-    val_header = hoja_maestra.cell(row=1, column=col_idx).value
-    if val_header:
-        header_limpio = normalizar_texto(val_header)
-        columnas_map[header_limpio] = col_idx
+columnas_map = {normalizar_texto(hoja_maestra.cell(row=1, column=c).value): c for c in range(1, hoja_maestra.max_column + 1) if hoja_maestra.cell(row=1, column=c).value}
 
 map_directo_celdas = {
     "C12": columnas_map.get(normalizar_texto("FORRO DE CHALECO")),
@@ -74,136 +59,86 @@ col_adicionales_ad = columnas_map.get(normalizar_texto("ADICIONALES"))
 
 
 def procesar_articulo_adicional(texto_adicional):
-    texto_adicional = texto_adicional.strip()
-    match = re.match(r"^(\d+)\s+(.*)$", texto_adicional)
-    if match:
-        return int(match.group(1)), match.group(2).strip().upper()
-    return 1, texto_adicional.upper()
+    match = re.match(r"^(\d+)\s+(.*)$", texto_adicional.strip())
+    return (int(match.group(1)), match.group(2).strip().upper()) if match else (1, texto_adicional.strip().upper())
 
 
 wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
 hoja_molde_firmas = wb_molde_firmas.active
-lista_combinadas_firmas_origen = []
-for rng in hoja_molde_firmas.merged_cells.ranges:
-    if rng.min_row >= 40:
-        lista_combinadas_firmas_origen.append({
-            "min_col": rng.min_col, "max_col": rng.max_col,
-            "min_row": rng.min_row, "max_row": rng.max_row
-        })
+lista_combinadas_firmas_origen = [{"min_col": r.min_col, "max_col": r.max_col, "min_row": r.min_row, "max_row": r.max_row} for r in hoja_molde_firmas.merged_cells.ranges if r.min_row >= 40]
 wb_molde_firmas.close()
 
-# 3. CONSOLIDACIÓN INTERNA DE FILAS AGRUPADAS POR PROYECTO (LECTURA OBLIGATORIA)
 diccionario_proyectos = {}
 for f_idx in range(2, hoja_maestra.max_row + 1):
-    if col_proyecto_b:
-        proy_nombre = hoja_maestra.cell(row=f_idx, column=col_proyecto_b).value
-        # Si el nombre del proyecto está vacío, lo asignamos a un grupo "SIN PROYECTO" para no perder la fila
-        if proy_nombre and str(proy_nombre).strip():
-            proy_limpio = str(proy_nombre).strip().upper()
-        else:
-            proy_limpio = "SIN PROYECTO ASSIGNED"
-            
-        if proy_limpio not in diccionario_proyectos:
-            diccionario_proyectos[proy_limpio] = []
-        diccionario_proyectos[proy_limpio].append(f_idx)
-
-# 4. GENERACIÓN DE ARCHIVOS INDEPENDIENTES POR PROYECTO
+    proy_nombre = hoja_maestra.cell(row=f_idx, column=col_proyecto_b).value if col_proyecto_b else None
+    proy_limpio = str(proy_nombre).strip().upper() if proy_nombre and str(proy_nombre).strip() else "SIN PROYECTO ASSIGNED"
+    if proy_limpio not in diccionario_proyectos:
+        diccionario_proyectos[proy_limpio] = []
+    diccionario_proyectos[proy_limpio].append(f_idx)
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     wb_salida_proyecto = openpyxl.load_workbook(archivo_plantilla)
     hoja_molde_proyecto = wb_salida_proyecto.active
-
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
-
     puestos_procesados_en_proyecto = 0
 
     for fila_data_idx in filas_asociadas:
         val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=col_proyecto_b).value if col_proyecto_b else ""
         val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=col_nominativo_c).value if col_nominativo_c else ""
-
+        
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else f"PUESTO_{fila_data_idx}"
-        nombre_pestaña_unico = f"{sigla_pestaña}_{fila_data_idx}"
-
         nueva_hoja_puesto = wb_salida_proyecto.copy_worksheet(hoja_molde_proyecto)
-        nueva_hoja_puesto.title = nombre_pestaña_unico[0:30]
+        nueva_hoja_puesto.title = f"{sigla_pestaña}_{fila_data_idx}"[0:30]
         puestos_procesados_en_proyecto += 1
 
         nueva_hoja_puesto["B3"] = val_proyecto_b
         nueva_hoja_puesto["F3"] = val_nominativo_c
-
         nueva_hoja_puesto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value).strip() if col_armamento_l and hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value else ""
         
         val_mun = hoja_maestra.cell(row=fila_data_idx, column=col_municion_m).value if col_municion_m else None
         nueva_hoja_puesto["C6"] = val_mun if val_mun is not None else 0
-        
         nueva_hoja_puesto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value).strip() if col_radio_n and hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value else ""
 
         for celda_dest, col_orig_idx in map_directo_celdas.items():
-            if col_orig_idx:
-                val_celda_origen = hoja_maestra.cell(row=fila_data_idx, column=col_orig_idx).value
-                nueva_hoja_puesto[celda_dest] = val_celda_origen if val_celda_origen is not None else "-"
-            else:
-                nueva_hoja_puesto[celda_dest] = "-"
+            val_origen = hoja_maestra.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
+            nueva_hoja_puesto[celda_dest] = val_origen if val_origen is not None else "-"
 
-        # --- PROCESAMIENTO DINÁMICO DE ARTÍCULOS ADICIONALES ---
         raw_adicionales = hoja_maestra.cell(row=fila_data_idx, column=col_adicionales_ad).value if col_adicionales_ad else None
-        str_adicionales = str(raw_adicionales).strip() if raw_adicionales is not None else ""
-        lista_items_adicionales = [i.strip() for i in str_adicionales.split(",") if i.strip()]
+        lista_items_adicionales = [i.strip() for i in str(raw_adicionales or "").split(",") if i.strip()]
         total_items_adicionales = len(lista_items_adicionales)
 
-        desfase_filas = 0
         if total_items_adicionales > 3:
-            desfase_filas = total_items_adicionales - 3
-
-            for block in list(nueva_hoja_puesto.merged_cells.ranges):
-                if block.min_row >= 43:
-                    nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
-
-            alturas_firmas_originales = {}
-            for r_firmas in range(43, 65):
-                alturas_firmas_originales[r_firmas] = nueva_hoja_puesto.row_dimensions[r_firmas].height
-
-            nueva_hoja_puesto.insert_rows(idx=43, amount=desfase_filas)
-
-            if 42 in nueva_hoja_puesto.row_dimensions:
-                altura_base_molde = nueva_hoja_puesto.row_dimensions.height
-            else:
-                altura_base_molde = 20
-
-            for f_nueva in range(43, 43 + desfase_filas):
-                nueva_hoja_puesto.row_dimensions[f_nueva].height = altura_base_molde
+            desfase = total_items_adicionales - 3
+            for rng in list(nueva_hoja_puesto.merged_cells.ranges):
+                if rng.min_row >= 43:
+                    nueva_hoja_puesto.unmerge_cells(start_row=rng.min_row, start_column=rng.min_col, end_row=rng.max_row, end_column=rng.max_col)
+            
+            alturas = {r: nueva_hoja_puesto.row_dimensions[r].height for r in range(43, 65)}
+            nueva_hoja_puesto.insert_rows(idx=43, amount=desfase)
+            
+            alt_base = nueva_hoja_puesto.row_dimensions[42].height or 20
+            for f_n evas in range(43, 43 + desfase):
+                nueva_hoja_puesto.row_dimensions[f_nevas].height = alt_base
                 for c_idx in range(1, 12):
                     cell_origen = nueva_hoja_puesto.cell(row=42, column=c_idx)
-                    cell_destino = nueva_hoja_puesto.cell(row=f_nueva, column=c_idx)
+                    cell_destino = nueva_hoja_puesto.cell(row=f_nevas, column=c_idx)
                     if cell_origen.has_style:
-                        cell_destino.font = copy(cell_origen.font)
-                        cell_destino.border = copy(cell_origen.border)
-                        cell_destino.fill = copy(cell_origen.fill)
-                        cell_destino.alignment = copy(cell_origen.alignment)
+                        cell_destino.font, cell_destino.border, cell_destino.fill, cell_destino.alignment = copy(cell_origen.font), copy(cell_origen.border), copy(cell_origen.fill), copy(cell_origen.alignment)
 
-            for r_orig, alt_val in alturas_firmas_originales.items():
+            for r_orig, alt_val in alturas.items():
                 if alt_val is not None:
-                    nueva_hoja_puesto.row_dimensions[r_orig + desfase_filas].height = alt_val
+                    nueva_hoja_puesto.row_dimensions[r_orig + desfase].height = alt_val
 
             for comb in lista_combinadas_firmas_origen:
                 if comb["min_row"] >= 43:
-                    nueva_hoja_puesto.merge_cells(
-                        start_row=comb["min_row"] + desfase_filas, start_column=comb["min_col"],
-                        end_row=comb["max_row"] + desfase_filas, end_column=comb["max_col"]
-                    )
+                    nueva_hoja_puesto.merge_cells(start_row=comb["min_row"] + desfase, start_column=comb["min_col"], end_row=comb["max_row"] + desfase, end_column=comb["max_col"])
 
-        limite_filas_adicionales = 40 + max(3, total_items_adicionales)
-        rango_filas_totales_adicionales = list(range(40, limite_filas_adicionales))
+        rango_filas_totales_adicionales = list(range(40, 40 + max(3, total_items_adicionales)))
 
-        # CORRECCIÓN DE RE-ESCRITURA SEGURA EN CELDAS COMBINADAS (INDENTACIÓN FIJADA)
         for fila_actual_ad in rango_filas_totales_adicionales:
             for block in list(nueva_hoja_puesto.merged_cells.ranges):
-                if block.min_row == fila_actual_ad and block.max_row == fila_actual_ad:
-                    if block.min_col >= 4 or block.max_col <= 11:
-                        nueva_hoja_puesto.unmerge_cells(
-                            start_row=block.min_row, start_column=block.min_col,
-                            end_row=block.max_row, end_column=block.max_col
-                        )
+                if block.min_row == fila_actual_ad and block.max_row == fila_actual_ad and (block.min_col >= 4 or block.max_col <= 11):
+                    nueva_hoja_puesto.unmerge_cells(start_row=block.min_row, start_column=block.min_col, end_row=block.max_row, end_column=block.max_col)
 
             for col_clean in range(4, 12):
                 nueva_hoja_puesto.cell(row=fila_actual_ad, column=col_clean).value = None
@@ -222,7 +157,7 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     if puestos_procesados_en_proyecto > 0:
         wb_salida_proyecto.remove(hoja_molde_proyecto)
         wb_salida_proyecto.save(ruta_salida_final)
-        print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
+        print(f"Archivo generado exitosamente: {nombre_archivo_salida}")
     wb_salida_proyecto.close()
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
