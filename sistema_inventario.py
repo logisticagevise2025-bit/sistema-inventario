@@ -3,6 +3,7 @@ import re
 import os
 import unicodedata
 import win32com.client
+import time
 from copy import copy
 
 carpeta_actual = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
@@ -112,7 +113,6 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
     hoja_molde_proyecto = wb_salida_proyecto.active
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     
-    # NUEVO: Guardar directamente dentro de la carpeta INVENTARIOS_EXCEL
     ruta_salida_final = os.path.join(carpeta_excel_salida, nombre_archivo_salida)
     puestos_procesados_en_proyecto = 0
 
@@ -204,32 +204,48 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
         print(f"Excel generado: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
     wb_salida_proyecto.close()
 
-# --- NUEVO: FASE AUTOMÁTICA DE CONVERSIÓN A PDF EN CARPETA PROPIA ---
+# --- NUEVA FASE BLINDADA CONTRA CONGELAMIENTOS EN PDF ---
 if archivos_excel_creados:
-    print("\nIniciando conversión automática a PDF...")
+    print("\nIniciando conversión automática e inmune a PDF...")
+    
+    # Abrimos una única instancia limpia de Excel
+    excel_app = None
     try:
         excel_app = win32com.client.Dispatch("Excel.Application")
         excel_app.Visible = False
         excel_app.DisplayAlerts = False
+    except Exception as e:
+        print(f"No se pudo iniciar la API de Excel: {e}")
 
+    if excel_app:
         for ruta_excel in archivos_excel_creados:
             nombre_base = os.path.basename(ruta_excel)
             nombre_pdf = nombre_base.replace(".xlsx", ".pdf")
-            # Guardar directamente dentro de la carpeta INVENTARIOS_PDF
             ruta_pdf_final = os.path.join(carpeta_pdf_salida, nombre_pdf)
             
             print(f"Exportando a PDF: {nombre_base}...")
-            libro = excel_app.Workbooks.Open(ruta_excel)
-            # 0 representa el formato xlTypePDF nativo de Excel
-            libro.ExportAsFixedFormat(0, ruta_pdf_final)
-            libro.Close(False)
-            print(f"-> PDF creado con éxito: {nombre_pdf}")
+            
+            # Encapsulado de seguridad individual por archivo para evitar congelamientos globales
+            try:
+                libro = excel_app.Workbooks.Open(ruta_excel, UpdateLinks=False, ReadOnly=True)
+                time.sleep(0.5) # Pausa de estabilidad para que Windows procese la apertura
+                libro.ExportAsFixedFormat(0, ruta_pdf_final)
+                libro.Close(False)
+                print(f"-> PDF creado con éxito: {nombre_pdf}")
+            except Exception as item_err:
+                print(f"⚠️ Aviso: Saltando archivo o reintentando {nombre_base} por demora/error: {item_err}")
+                try:
+                    libro.Close(False)
+                except:
+                    pass
+                continue
 
-        excel_app.Quit()
-        del excel_app
-    except Exception as err:
-        print(f"⚠️ Error durante la exportación a PDF: {err}")
-        print("Asegúrate de tener Microsoft Excel instalado y haber ejecutado 'pip install pywin32'.")
+        # Cierre definitivo y limpio de memoria
+        try:
+            excel_app.Quit()
+            del excel_app
+        except:
+            pass
 
 print("\n--- PROCESO GLOBAL FINALIZADO CON ÉXITO ---")
 print(f"📂 Archivos Excel guardados en: {os.path.basename(carpeta_excel_salida)}")
