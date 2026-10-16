@@ -92,16 +92,20 @@ for rng in hoja_molde_firmas.merged_cells.ranges:
         })
 wb_molde_firmas.close()
 
-# 3. CONSOLIDACIÓN INTERNA DE FILAS AGRUPADAS POR PROYECTO
+# 3. CONSOLIDACIÓN INTERNA DE FILAS AGRUPADAS POR PROYECTO (LECTURA OBLIGATORIA)
 diccionario_proyectos = {}
 for f_idx in range(2, hoja_maestra.max_row + 1):
     if col_proyecto_b:
         proy_nombre = hoja_maestra.cell(row=f_idx, column=col_proyecto_b).value
+        # Si el nombre del proyecto está vacío, lo asignamos a un grupo "SIN PROYECTO" para no perder la fila
         if proy_nombre and str(proy_nombre).strip():
             proy_limpio = str(proy_nombre).strip().upper()
-            if proy_limpio not in diccionario_proyectos:
-                diccionario_proyectos[proy_limpio] = []
-            diccionario_proyectos[proy_limpio].append(f_idx)
+        else:
+            proy_limpio = "SIN PROYECTO ASSIGNED"
+            
+        if proy_limpio not in diccionario_proyectos:
+            diccionario_proyectos[proy_limpio] = []
+        diccionario_proyectos[proy_limpio].append(f_idx)
 
 # 4. GENERACIÓN DE ARCHIVOS INDEPENDIENTES POR PROYECTO
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
