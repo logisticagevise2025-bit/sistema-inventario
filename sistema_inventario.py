@@ -18,8 +18,8 @@ hoja_maestra = wb_fuente_maestra.active
 def normalizar_texto(texto):
     if not texto:
         return ""
-    texto_normalizado = ''.join(c for c in unicodedata.normalize('NFD', str(texto).strip().upper()) if unicodedata.category(c) != 'Mn')
-    return re.sub(r'\s+', ' ', texto_normalizado)
+    texto_norm = ''.join(c for c in unicodedata.normalize('NFD', str(texto).strip().upper()) if unicodedata.category(c) != 'Mn')
+    return re.sub(r'\s+', ' ', texto_norm)
 
 
 columnas_map = {normalizar_texto(hoja_maestra.cell(row=1, column=c).value): c for c in range(1, hoja_maestra.max_column + 1) if hoja_maestra.cell(row=1, column=c).value}
@@ -52,15 +52,21 @@ map_directo_celdas = {
 
 col_proyecto_b = columnas_map.get(normalizar_texto("NOMBRE DEL PUESTO"))
 col_nominativo_c = columnas_map.get(normalizar_texto("NOMINATIVO"))
-col_armamento_l = columnas_map.get(normalizar_texto("ARMAMENTO"))
-col_municion_m = columnas_map.get(normalizar_texto("MUNICION"))
+col_armamento_l = columnas_map.get(normalizar_texto("ARMAMENTO")), columnas_map.get("ARMAMENTO")
+col_municion_m = columnas_map.get(normalizar_texto("MUNICION")), columnas_map.get("MUNICION")
 col_radio_n = columnas_map.get(normalizar_texto("RADIO PORTATIL"))
 col_adicionales_ad = columnas_map.get(normalizar_texto("ADICIONALES"))
 
+idx_proyecto = col_proyecto_b if col_proyecto_b else 1
+idx_nominativo = col_nominativo_c if col_nominativo_c else 2
+idx_armamento = col_armamento_l[0] or col_armamento_l[1] or 11
+idx_municion = col_municion_m[0] or col_municion_m[1] or 12
+idx_radio = col_radio_n if col_radio_n else 13
+
 
 def procesar_articulo_adicional(texto_adicional):
-    match = re.match(r"^(\d+)\s+(.*)$", texto_adicional.strip())
-    return (int(match.group(1)), match.group(2).strip().upper()) if match else (1, texto_adicional.strip().upper())
+    match = re.match(r"^(\d+)\s+(.*)$", str(texto_adicional).strip())
+    return (int(match.group(1)), match.group(2).strip().upper()) if match else (1, str(texto_adicional).strip().upper())
 
 
 wb_molde_firmas = openpyxl.load_workbook(archivo_plantilla)
@@ -69,36 +75,41 @@ lista_combinadas_firmas_origen = [{"min_col": r.min_col, "max_col": r.max_col, "
 wb_molde_firmas.close()
 
 diccionario_proyectos = {}
+for f_idx in range(2, hoja_maestra.max_row + 1):
+    proy_nombre = hoja_maestra.cell(row=f_idx, column=idx_proyecto).value
+    nominativo_val = hoja_maestra.cell(row=f_idx, column=idx_nominativo).value
+    if not proy_nombre and not nominativo_val:
+        continue
+    proy_limpio = str(proy_nombre).strip().upper() if proy_nombre and str(proy_nombre).strip() else "SIN PROYECTO"
+    proy_limpio = re.sub(r'[\\/*?:\[\]]', '', proy_limpio)
+    if proy_limpio not in diccionario_proyectos:
+        diccionario_proyectos[proy_limpio] = []
+    diccionario_proyectos[proy_limpio].append(f_idx)
 for proyecto_k, filas_asociadas in diccionario_proyectos.items():
-    # Creamos un libro nuevo por proyecto donde consolidaremos las pestañas de los puestos
     wb_salida_proyecto = openpyxl.Workbook()
-    # Eliminamos la pestaña vacía que crea openpyxl por defecto
-    default_sheet = wb_salida_proyecto.active
-    wb_salida_proyecto.remove(default_sheet)
-    
+    wb_salida_proyecto.remove(wb_salida_proyecto.active)
     nombre_archivo_salida = f"INVENTARIOS {proyecto_k}.xlsx"
     ruta_salida_final = os.path.join(carpeta_actual, nombre_archivo_salida)
     puestos_procesados_en_proyecto = 0
 
     for idx_conteo, fila_data_idx in enumerate(filas_asociadas, start=1):
-        val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=col_proyecto_b).value if col_proyecto_b else ""
-        val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=col_nominativo_c).value if col_nominativo_c else ""
+        val_proyecto_b = hoja_maestra.cell(row=fila_data_idx, column=idx_proyecto).value or ""
+        val_nominativo_c = hoja_maestra.cell(row=fila_data_idx, column=idx_nominativo).value or ""
         
         sigla_pestaña = str(val_nominativo_c).strip().replace(" ", "_") if val_nominativo_c else "PUESTO"
+        sigla_pestaña = re.sub(r'[\\/*?:\[\]]', '', sigla_pestaña)
         nombre_pestaña_unico = f"{idx_conteo}_{sigla_pestaña}"[0:30]
         
-        # OPERACIÓN ULTRA RÁPIDA: Cargamos un molde fresco e independiente directamente de la plantilla
         wb_molde_fresco = openpyxl.load_workbook(archivo_plantilla)
         hoja_molde_proyecto = wb_molde_fresco.active
         
-        # Inyección de Encabezados Principales
         hoja_molde_proyecto["B3"] = val_proyecto_b
         hoja_molde_proyecto["F3"] = val_nominativo_c
-        hoja_molde_proyecto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value).strip() if col_armamento_l and hoja_maestra.cell(row=fila_data_idx, column=col_armamento_l).value else ""
+        hoja_molde_proyecto["E5"] = str(hoja_maestra.cell(row=fila_data_idx, column=idx_armamento).value or "").strip()
         
-        val_mun = hoja_maestra.cell(row=fila_data_idx, column=col_municion_m).value if col_municion_m else None
+        val_mun = hoja_maestra.cell(row=fila_data_idx, column=idx_municion).value
         hoja_molde_proyecto["C6"] = val_mun if val_mun is not None else 0
-        hoja_molde_proyecto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value).strip() if col_radio_n and hoja_maestra.cell(row=fila_data_idx, column=col_radio_n).value else ""
+        hoja_molde_proyecto["E8"] = str(hoja_maestra.cell(row=fila_data_idx, column=idx_radio).value or "").strip()
 
         for celda_dest, col_orig_idx in map_directo_celdas.items():
             val_origen = hoja_maestra.cell(row=fila_data_idx, column=col_orig_idx).value if col_orig_idx else None
@@ -158,16 +169,12 @@ for proyecto_k, filas_asociadas in diccionario_proyectos.items():
 
             hoja_molde_proyecto.merge_cells(start_row=fila_actual_ad, start_column=4, end_row=fila_actual_ad, end_column=11)
 
-        # Asignar el nombre único a la pestaña trabajada
         hoja_molde_proyecto.title = nombre_pestaña_unico
-        
-        # OPERACIÓN DE ESCRITURA FÍSICA: Enlazamos la hoja clonada directamente al libro de salida
         hoja_molde_proyecto._parent = wb_salida_proyecto
         wb_salida_proyecto._sheets.append(hoja_molde_proyecto)
         puestos_procesados_en_proyecto += 1
 
     if puestos_procesados_en_proyecto > 0:
-        # Forzar la creación e inicialización física del archivo en Windows
         wb_salida_proyecto.save(ruta_salida_final)
         print(f"Archivo generado exitosamente: {nombre_archivo_salida} con {puestos_procesados_en_proyecto} puestos.")
     wb_salida_proyecto.close()
